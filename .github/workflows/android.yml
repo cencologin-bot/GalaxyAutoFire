@@ -1,0 +1,62 @@
+name: Android CI
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  OPENCV_VERSION: "4.10.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write   # needed only to attach the APK to a release on tags
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;26.1.10909125"
+
+      - name: Cache OpenCV Android SDK
+        id: opencv-cache
+        uses: actions/cache@v4
+        with:
+          path: opencv-sdk
+          key: opencv-android-${{ env.OPENCV_VERSION }}
+
+      - name: Download OpenCV Android SDK
+        if: steps.opencv-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o opencv.zip "https://github.com/opencv/opencv/releases/download/${OPENCV_VERSION}/opencv-${OPENCV_VERSION}-android-sdk.zip"
+          unzip -q opencv.zip -d opencv-sdk
+          rm opencv.zip
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace -POpenCV_DIR="$GITHUB_WORKSPACE/opencv-sdk/OpenCV-android-sdk/sdk/native/jni"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VisualAutomation-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Attach APK to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/debug/*.apk
