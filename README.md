@@ -1,41 +1,48 @@
-# Galaxy Auto Fire — Android (v2)
+# VisualAutomation 0.3.0 — Live recognition build
 
-Monitor visual auxiliar en Kotlin + Jetpack Compose. Detecta luz **roja / verde / sin señal** en una región de la pantalla que el usuario comparte voluntariamente (MediaProjection).
+Android app (Kotlin + C++17 + OpenCV + JNI + MediaProjection) that recognises the **silver star** barrel,
+tracks it in real time, and reports when its centre enters a calibrated destination area.
+Vision only: no taps, clicks, firing or any action on the game.
 
-> Es un **monitor**: no automatiza toques, gestos ni acciones dentro del juego. Los cuatro intervalos solo se guardan como configuración.
+## Pipeline (native, `vision/DetectionCore.cpp`)
+1. **Capture**: MediaProjection -> ImageReader (RGBA, <=720 px wide) -> direct ByteBuffer -> JNI (no copies to Java).
+2. **Work frame**: downscaled to 480 px wide, gray + HSV, restricted to a configurable *search region* (default: bottom game strip).
+3. **Detection**: multi-scale template matching (`TM_CCOEFF_NORMED`, 22 scales) of the silver-star barrel, top-3 peaks per scale with non-max suppression.
+4. **Colour gate**: the star centre must have mean saturation <= 70. Gold/orange stars, gifts and chests measure 145-220, silver ~6-11.
+5. **Tracking**: constant-velocity Kalman filter. While tracking, only a small window around the prediction is searched at the locked scale (+-1 step). Misses coast on the prediction (dashed rectangle); periodic wider re-acquisition; LOST after 6 misses, SEARCHING after 90.
+6. **Arrival**: centre inside the calibrated circle for 3 consecutive measured frames -> ARRIVED; leaves the circle (15 % hysteresis) -> re-armed.
+7. **Lantern**: lit green/red lamp found by HSV in a fixed region (colour is informational only). Used as spatial reference: `movingTowardLantern` = velocity points toward it.
+8. **Outputs**: bounds, centre, confidence, velocity/speed, FPS, 64-point history, status.
 
-## Interfaz
-- **Monitor**: orbe de señal animado (verde / rojo / azul de análisis / gris en pausa), medidores de cobertura con marca de umbral, FPS y muestras, botón de inicio/detención.
-- **Región**: vista previa de teléfono con el área de análisis y dos selectores de rango (horizontal / vertical).
-- **Ajustes**: sensibilidad (saturación, brillo, cobertura) e intervalos. Se guardan solos (sin botones "Guardar").
-- Tema oscuro fijo, edge-to-edge (necesario con targetSdk 35), iconos dibujados con Canvas (sin librería de iconos).
+Prototype numbers on the bundled screenshot (Python/OpenCV mirror of the same algorithm):
+silver barrel NCC 0.97-0.99 vs. <= 0.76 for every other barrel; negative crops <= 0.74; lantern located within ~10 px; coarse scale scan ~23 ms on desktop, local tracking is a single small match per frame.
 
-## Arquitectura
-| Archivo | Función |
-|---|---|
-| `Detection.kt` | Detector HSV puro (sin Android), lectura directa del buffer RGBA con `rowStride`/`pixelStride`, estabilizador de estado |
-| `CaptureService.kt` | Servicio en primer plano `mediaProjection`; captura a media resolución, máx. ~30 análisis/s, cierre idempotente |
-| `MonitorBus.kt` | `StateFlow` servicio → UI (reemplaza escrituras por fotograma en SharedPreferences) |
-| `Settings.kt` | Persistencia con DataStore (valores validados con `sanitized()`) |
-| `MainViewModel.kt` | Estado de UI + guardado automático con debounce |
-| `ui/` | Tema, componentes y pantallas Compose |
+## Build on GitHub (no local setup)
+1. Create a repository and push this folder as its root.
+2. The workflow `.github/workflows/android.yml` installs SDK/NDK/CMake, downloads the OpenCV Android SDK 4.10.0 and runs `gradle :app:assembleDebug`.
+3. Download the APK from **Actions -> latest run -> Artifacts** (debug-signed, installable). Push a tag such as `v0.3.0` to also attach it to a GitHub Release.
+No Gradle wrapper is committed; CI uses Gradle 8.9 directly. Run `gradle wrapper --gradle-version 8.9` once locally if you want `./gradlew`.
 
-## Compilar
-1. Android Studio (Hedgehog o posterior), JDK 17, sincronizar Gradle (Gradle 8.9 / AGP 8.7.3 / Kotlin 2.0.21).
-2. Ejecutar en Android 8.0+ (minSdk 26). En Android 13+ se pide el permiso de notificaciones; en Android 14+ se acepta la captura en cada sesión.
-3. Pruebas unitarias: `./gradlew :app:testDebugUnitTest` (o `gradle` si no hay wrapper; Android Studio genera el wrapper al sincronizar).
+## Build locally
+Run `scripts/setup_opencv.sh`, put the printed `OpenCV_DIR=...` line in `gradle.properties`, then build `app` in Android Studio.
 
-## Cambios respecto a v1
-- La "proporción" ahora se mide sobre **todas** las muestras de la región (antes solo sobre las saturadas, lo que daba falsos positivos con pocos píxeles). Parámetro renombrado a *cobertura mínima* (2 % por defecto; con una luz pequeña en una región grande conviene reducir la región en la pestaña Región).
-- Sin `Bitmap` por fotograma: se lee el buffer directamente (menos memoria y CPU).
-- Ajustes migrados a DataStore (claves nuevas; no se migran los valores de v1).
-- Se solicita `POST_NOTIFICATIONS`, se añade acción "Detener" en la notificación y se corrige la liberación reentrante de MediaProjection.
+## Build (manual details)
+1. Android Studio, SDK 35, NDK + CMake 3.22.1.
+2. OpenCV Android SDK; pass `-POpenCV_DIR=/path/to/OpenCV-android-sdk/sdk/native/jni`.
+3. Build `app` (ABI: arm64-v8a).
 
-## Validaciones pendientes en dispositivo real (Motorola g13)
-- Ajustar región y umbrales con la luz real del minijuego (los medidores del Monitor sirven para calibrar).
-- Medir rendimiento, temperatura y consumo.
-- Verificar notificación del servicio en Android 14.
-- Verificado sin dispositivo: XML bien formado, referencias de recursos, equilibrio de llaves y lógica del detector (port ejecutado, 7 casos OK). **No verificado**: compilación Kotlin y todo lo anterior en el dispositivo real.
+## Use
+- **Floating panel over the game**: tap *Iniciar análisis visual*, grant overlay + capture, open the game and press ▶ on the draggable panel (🎯 calibrate by touching the game, ◎± radius, ■ stop, ✕ close). Capture starts paused; nothing is processed until ▶.
+- **Full-screen reference test**: *Test a pantalla completa* shows the reference screenshot full screen with the same panel on top; ⇆ scrolls the barrel block so the star moves through the destination.
+- Drag the green point to the destination, set the radius, **Guardar calibración** (state CALIBRATING until saved).
+- **Probar detección en la imagen** runs the engine on the bundled screenshot.
+- **Iniciar análisis visual** asks for overlay + screen-capture permission, then draws the rectangle, trail, destination ring and HUD over the game.
 
-## APK en GitHub
-`.github/workflows/android-build.yml` ejecuta las pruebas unitarias y compila `app-debug.apk` (JDK 17, Gradle 8.9). Descarga el artefacto **GalaxyAutoFire-debug** desde la pestaña Actions.
+## Tuning
+- `Params` in `DetectionCore.h` (thresholds, saturation gate, frames).
+- SharedPreferences keys `search_*` and `lantern_*` (normalized rects) if the game layout differs.
+- Template: `assets/templates/silver_star_barrel.jpg`.
+
+## Notes
+- The overlay is part of the captured screen; strokes are thin and the rectangle is inflated to avoid disturbing the match.
+- Not yet compiled or run on a device in the authoring environment: validate on hardware and profile FPS.
