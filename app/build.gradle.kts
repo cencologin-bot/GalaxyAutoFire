@@ -32,6 +32,12 @@ android {
         }
     }
 
+    // OpenCV_DIR = <sdk>/native/jni  ->  prebuilt .so files live in <sdk>/native/libs/<abi>
+    val openCvDir = project.findProperty("OpenCV_DIR") as String?
+    if (!openCvDir.isNullOrBlank()) {
+        sourceSets.getByName("main").jniLibs.srcDir(File(openCvDir).parentFile.resolve("libs"))
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
