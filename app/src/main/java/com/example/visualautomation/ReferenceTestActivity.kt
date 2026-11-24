@@ -57,6 +57,8 @@ class ReferenceTestActivity : Activity() {
             onRadius = { dir -> EngineConfig.adjustRadius(this@ReferenceTestActivity, dir) }
             onSim = { sim = !sim; setSim(sim) }
             onClose = { finish() }
+            setActionLabels(ArrivalActions.LABELS, ArrivalActions.selected(this@ReferenceTestActivity))
+            onAction = { i -> ArrivalActions.select(this@ReferenceTestActivity, i); setActionLabels(ArrivalActions.LABELS, i) }
         }
         val d = resources.displayMetrics.density
         val root = FrameLayout(this).apply {
@@ -128,6 +130,7 @@ class ReferenceTestActivity : Activity() {
                 view.frameBitmap = frame
                 if (st != null) {
                     view.state = st
+                    if (ArrivalActions.onState(this@ReferenceTestActivity, st)) panel.setInfo("✔ Llegada confirmada")
                     if (now - lastUi > 200 && !calib) {
                         lastUi = now
                         panel.setInfo("${st.status} · ${(st.confidence * 100).toInt()}% · ${st.speed.toInt()} px/s · ${"%.0f".format(st.fps)} FPS")

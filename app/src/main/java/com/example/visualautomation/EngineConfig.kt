@@ -18,7 +18,7 @@ object EngineConfig {
     fun apply(ctx: Context) {
         val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         NativeBridge.nativeConfigure(
-            p.getFloat("dest_x", 0.56f), p.getFloat("dest_y", 0.73f), p.getFloat("dest_radius", 0.055f),
+            p.getFloat("dest_x", 0.35f), p.getFloat("dest_y", 0.776f), p.getFloat("dest_radius", 0.07f),
             p.getFloat("search_x", 0.00f), p.getFloat("search_y", 0.58f),
             p.getFloat("search_w", 1.00f), p.getFloat("search_h", 0.26f),
             p.getFloat("lantern_x", 0.72f), p.getFloat("lantern_y", 0.58f),
@@ -35,7 +35,7 @@ object EngineConfig {
     /** direction: +1 / -1, in steps of 0.5 % of the screen's short side. */
     fun adjustRadius(ctx: Context, direction: Int) {
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val r = (prefs.getFloat("dest_radius", 0.055f) + direction * 0.005f).coerceIn(0.01f, 0.25f)
+        val r = (prefs.getFloat("dest_radius", 0.07f) + direction * 0.005f).coerceIn(0.01f, 0.25f)
         prefs.edit().putFloat("dest_radius", r).apply()
         apply(ctx)
     }

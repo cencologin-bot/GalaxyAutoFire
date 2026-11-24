@@ -4,7 +4,9 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.media.Image
 import android.graphics.drawable.Icon
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -14,6 +16,8 @@ import android.media.projection.MediaProjectionManager
 import android.os.*
 import android.provider.Settings
 import android.util.DisplayMetrics
+import android.util.Log
+import android.widget.Toast
 import android.view.Gravity
 import android.view.WindowManager
 import kotlin.math.min
@@ -49,6 +53,7 @@ class ScreenCaptureService : Service() {
     @Volatile private var paused = true
     @Volatile private var calibrating = false
     private var lastUi = 0L
+    private var lastDiag = 0L
 
     override fun onBind(i: Intent?): IBinder? = null
 
@@ -83,53 +88,95 @@ class ScreenCaptureService : Service() {
 
     private fun startCapture(code: Int, data: Intent) {
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val mpm = getSystemService(MediaProjectionManager::class.java)
-        projection = mpm.getMediaProjection(code, data).also {
-            it.registerCallback(object : MediaProjection.Callback() {
-                override fun onStop() { stopSelf() }
-            }, main)
-        }
-
-        val real = DisplayMetrics()
-        @Suppress("DEPRECATION") wm.defaultDisplay.getRealMetrics(real)
-        val k = min(1f, MAX_CAPTURE_WIDTH / real.widthPixels.toFloat())
-        val w = (real.widthPixels * k).roundToInt()
-        val h = (real.heightPixels * k).roundToInt()
-
-        EngineConfig.ensureTemplate(this)
-        EngineConfig.apply(this)
-        NativeBridge.nativeSetCalibrating(false)
-        NativeBridge.nativeReset()
-
-        thread = HandlerThread("va-vision").also { it.start() }
-        val handler = Handler(thread!!.looper)
-        reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
-        display = projection!!.createVirtualDisplay("va-capture", w, h, (real.densityDpi * k).toInt().coerceAtLeast(72),
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader!!.surface, null, handler)
-
+        // 1) Floating UI first, so the person always sees the panel (and any error) over the game.
         showOverlay()
         showPanel()
-        reader!!.setOnImageAvailableListener({ r ->
-            val img = r.acquireLatestImage() ?: return@setOnImageAvailableListener
-            try {
-                if (paused && !calibrating) return@setOnImageAvailableListener   // idle: no processing
-                val plane = img.planes[0]
-                val raw = NativeBridge.nativeProcess(plane.buffer, img.width, img.height,
-                    plane.rowStride, SystemClock.elapsedRealtime())
-                if (raw != null) {
-                    val st = EngineState.from(raw)
-                    overlay?.let { it.state = st; it.postInvalidate() }
-                    calibView?.let { it.state = st; it.postInvalidate() }
-                    listener?.invoke(st)
-                    val now = SystemClock.elapsedRealtime()
-                    if (now - lastUi > 200) {
-                        lastUi = now
-                        main.post { panel?.setInfo("${st.status} · ${(st.confidence * 100).toInt()}% · ${st.speed.toInt()} px/s · ${"%.0f".format(st.fps)} FPS") }
+        if (panel == null) {
+            Toast.makeText(this, "Falta el permiso de superposición sobre otras apps", Toast.LENGTH_LONG).show()
+        }
+        try {
+            // 2) Native engine (fails here if libopencv_java4.so / libvisual_automation.so are not packaged).
+            check(EngineConfig.ensureTemplate(this)) { "no se pudo cargar la plantilla" }
+            EngineConfig.apply(this)
+            NativeBridge.nativeSetCalibrating(false)
+            NativeBridge.nativeReset()
+
+            // 3) Screen capture.
+            val mpm = getSystemService(MediaProjectionManager::class.java)
+            projection = mpm.getMediaProjection(code, data).also {
+                it.registerCallback(object : MediaProjection.Callback() {
+                    override fun onStop() { stopSelf() }
+                }, main)
+            }
+            val real = DisplayMetrics()
+            @Suppress("DEPRECATION") wm.defaultDisplay.getRealMetrics(real)
+            val k = min(1f, MAX_CAPTURE_WIDTH / real.widthPixels.toFloat())
+            val w = (real.widthPixels * k).roundToInt()
+            val h = (real.heightPixels * k).roundToInt()
+
+            thread = HandlerThread("va-vision").also { it.start() }
+            val handler = Handler(thread!!.looper)
+            reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+            display = projection!!.createVirtualDisplay("va-capture", w, h, (real.densityDpi * k).toInt().coerceAtLeast(72),
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader!!.surface, null, handler)
+
+            reader!!.setOnImageAvailableListener({ r ->
+                val img = r.acquireLatestImage() ?: return@setOnImageAvailableListener
+                try {
+                    val nowD = SystemClock.elapsedRealtime()
+                    if (nowD - lastDiag > 700) { lastDiag = nowD; runCatching { captureDiag(img) } }
+                    if (paused && !calibrating) return@setOnImageAvailableListener   // idle: no processing
+                    val plane = img.planes[0]
+                    val raw = NativeBridge.nativeProcess(plane.buffer, img.width, img.height,
+                        plane.rowStride, SystemClock.elapsedRealtime())
+                    if (raw != null) {
+                        val st = EngineState.from(raw)
+                        overlay?.let { it.state = st; it.postInvalidate() }
+                        calibView?.let { it.state = st; it.postInvalidate() }
+                        listener?.invoke(st)
+                        if (ArrivalActions.onState(applicationContext, st))
+                            main.post { panel?.setNote("✔ Llegada confirmada · acción: ${ArrivalActions.LABELS[ArrivalActions.selected(applicationContext)]}") }
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastUi > 200) {
+                            lastUi = now
+                            main.post { panel?.setInfo("${st.status} · ${(st.confidence * 100).toInt()}% · ${st.speed.toInt()} px/s · ${"%.0f".format(st.fps)} FPS") }
+                        }
                     }
-                }
-            } finally { img.close() }
-        }, handler)
-        running = true
+                } catch (t: Throwable) {
+                    Log.e("VisualAutomation", "frame processing failed", t)
+                    main.post { panel?.setInfo("Error de proceso: ${t.javaClass.simpleName} ${t.message ?: ""}") }
+                    paused = true
+                } finally { img.close() }
+            }, handler)
+            running = true
+            panel?.setInfo("Listo · abre el juego y pulsa ▶")
+        } catch (t: Throwable) {
+            Log.e("VisualAutomation", "capture start failed", t)
+            val msg = "Error: ${t.javaClass.simpleName} ${t.message ?: ""}".trim()
+            panel?.setInfo(msg)
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Shows what the engine actually receives and warns if the frame is black (secure/blocked content). */
+    private fun captureDiag(img: Image) {
+        val plane = img.planes[0]
+        val rowPx = plane.rowStride / plane.pixelStride
+        val full = Bitmap.createBitmap(rowPx, img.height, Bitmap.Config.ARGB_8888)
+        plane.buffer.rewind()
+        full.copyPixelsFromBuffer(plane.buffer)
+        val tw = 140
+        val th = (img.height * tw / img.width.toFloat()).roundToInt().coerceAtLeast(1)
+        val thumb = Bitmap.createScaledBitmap(Bitmap.createBitmap(full, 0, 0, img.width, img.height), tw, th, true)
+        full.recycle()
+        val px = IntArray(tw * th)
+        thumb.getPixels(px, 0, tw, 0, 0, tw, th)
+        var sum = 0L
+        for (c in px) sum += (((c shr 16) and 255) + ((c shr 8) and 255) + (c and 255)) / 3
+        val mean = (sum / px.size).toInt()
+        val note = if (mean < 6) "⚠ Captura NEGRA: la pantalla del juego está bloqueada o no se está capturando"
+                   else "Captura de pantalla OK · ${img.width}×${img.height} · brillo $mean"
+        main.post { panel?.setPreview(thumb); panel?.setNote(note) }
     }
 
     private fun lp(touchable: Boolean, wrap: Boolean = false) = WindowManager.LayoutParams(
@@ -159,6 +206,8 @@ class ScreenCaptureService : Service() {
             p.onCalibrate = { setCalibration(!calibrating) }
             p.onRadius = { dir -> EngineConfig.adjustRadius(this, dir) }
             p.onClose = { stopSelf() }
+            p.setActionLabels(ArrivalActions.LABELS, ArrivalActions.selected(this))
+            p.onAction = { i -> ArrivalActions.select(this, i); p.setActionLabels(ArrivalActions.LABELS, i) }
             wm.addView(p, params)
         }
     }
@@ -173,6 +222,7 @@ class ScreenCaptureService : Service() {
             if (calibrating) setCalibration(false)
             NativeBridge.nativeSetCalibrating(false)
             NativeBridge.nativeReset()
+            ArrivalActions.reset()
             panel?.setInfo("Buscando la estrella plateada…")
         }
     }

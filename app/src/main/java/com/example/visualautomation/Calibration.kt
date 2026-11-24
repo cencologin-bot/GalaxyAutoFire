@@ -13,9 +13,9 @@ class CalibrationView @JvmOverloads constructor(
 
     private val image = BitmapFactory.decodeResource(resources, R.drawable.game_preview)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var centerXn = 0.56f
-    private var centerYn = 0.73f
-    private var radiusN = 0.055f
+    private var centerXn = 0.35f
+    private var centerYn = 0.776f
+    private var radiusN = 0.07f
     private var dragging = false
 
     /** Last detection run on the static preview (coordinates in bitmap pixels). */

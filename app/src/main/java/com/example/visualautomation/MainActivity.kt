@@ -77,7 +77,7 @@ class MainActivity : Activity() {
         val reset = Button(this).apply {
             text = "Restablecer calibración"
             setOnClickListener {
-                calibrationView.setCalibration(0.56f, 0.73f, 0.055f)
+                calibrationView.setCalibration(0.35f, 0.776f, 0.07f)
                 radius.progress = 55
                 updateLabels()
             }
@@ -147,11 +147,11 @@ class MainActivity : Activity() {
 
         val prefs = getSharedPreferences("visual_automation", Context.MODE_PRIVATE)
         calibrationView.setCalibration(
-            prefs.getFloat("dest_x", 0.56f),
-            prefs.getFloat("dest_y", 0.73f),
-            prefs.getFloat("dest_radius", 0.055f)
+            prefs.getFloat("dest_x", 0.35f),
+            prefs.getFloat("dest_y", 0.776f),
+            prefs.getFloat("dest_radius", 0.07f)
         )
-        radius.progress = (prefs.getFloat("dest_radius", 0.055f) * 1000).toInt()
+        radius.progress = (prefs.getFloat("dest_radius", 0.07f) * 1000).toInt()
         setContentView(root)
         updateLabels()
     }
@@ -196,7 +196,11 @@ class MainActivity : Activity() {
         getSharedPreferences(EngineConfig.PREFS, Context.MODE_PRIVATE).edit()
             .putFloat("dest_x", x).putFloat("dest_y", y).putFloat("dest_radius", r).apply()
         @Suppress("DEPRECATION")
-        startActivityForResult(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent(), reqCapture)
+        val mpm = getSystemService(MediaProjectionManager::class.java)
+        val captureIntent = if (Build.VERSION.SDK_INT >= 34)
+            mpm.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay())
+        else mpm.createScreenCaptureIntent()
+        startActivityForResult(captureIntent, reqCapture)
     }
 
     @Suppress("DEPRECATION")
