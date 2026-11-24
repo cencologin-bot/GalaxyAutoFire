@@ -117,7 +117,7 @@ LanternInfo DetectionCore::findLantern(const cv::Mat& hsv, const cv::Rect& regio
     if (roi.empty()) return out;
     cv::Mat view = hsv(roi), green, red1, red2;
     cv::inRange(view, cv::Scalar(40, 110, 140), cv::Scalar(88, 255, 255), green);
-    cv::inRange(view, cv::Scalar(0, 150, 200),  cv::Scalar(8, 255, 255),  red1);
+    cv::inRange(view, cv::Scalar(0, 120, 120),  cv::Scalar(18, 255, 255), red1);   // real game: red lamp is orange-red
     cv::inRange(view, cv::Scalar(172, 150, 200), cv::Scalar(180, 255, 255), red2);
     cv::Mat redMask = red1 | red2, all = green | redMask;
     cv::morphologyEx(all, all, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_RECT, {3, 3}));
@@ -199,7 +199,7 @@ FrameResult DetectionCore::process(const cv::Mat& frame, double ts) {
         // 1) local window around the Kalman prediction (fast path)
         const float sizeW = float(pyramid_[lockedScale_].cols);
         const float speedW = std::hypot(kf_.statePost.at<float>(2), kf_.statePost.at<float>(3)) * k;
-        const float margin = std::max(0.9f * sizeW, float(speedW * dt * 2.5) + 0.5f * sizeW)
+        const float margin = std::max(1.3f * sizeW, float(speedW * dt * 2.5) + 0.5f * sizeW)
                              + misses_ * 0.25f * sizeW;
         const cv::Point2f pw = pred * k;
         cv::Rect roi(int(pw.x - sizeW * 0.5f - margin), int(pw.y - sizeW * 0.5f - margin),

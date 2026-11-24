@@ -75,8 +75,8 @@ private:
     std::vector<cv::Mat> pyramid_;            // gray templates
     int lockedScale_ = -1;
 
-    cv::Point2f destNorm_{0.56f, 0.73f};
-    float destRadNorm_ = 0.055f;
+    cv::Point2f destNorm_{0.35f, 0.776f};
+    float destRadNorm_ = 0.07f;
     cv::Rect2f searchNorm_{0.f, 0.58f, 1.f, 0.26f};   // default: game strip
     cv::Rect2f lanternNorm_{0.72f, 0.58f, 0.28f, 0.16f};
     LanternInfo lanternCache_;
