@@ -36,22 +36,24 @@ jobs:
         id: opencv-cache
         uses: actions/cache@v4
         with:
-          path: opencv-sdk
+          path: ~/opencv-sdk
           key: opencv-android-${{ env.OPENCV_VERSION }}
 
       - name: Download OpenCV Android SDK
         if: steps.opencv-cache.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL -o opencv.zip "https://github.com/opencv/opencv/releases/download/${OPENCV_VERSION}/opencv-${OPENCV_VERSION}-android-sdk.zip"
-          unzip -q opencv.zip -d opencv-sdk
-          rm opencv.zip
+          # Kept outside the checkout so setup-gradle does not validate OpenCV's sample wrapper jars.
+          curl -fsSL -o "$RUNNER_TEMP/opencv.zip" "https://github.com/opencv/opencv/releases/download/${OPENCV_VERSION}/opencv-${OPENCV_VERSION}-android-sdk.zip"
+          mkdir -p "$HOME/opencv-sdk"
+          unzip -q "$RUNNER_TEMP/opencv.zip" -d "$HOME/opencv-sdk"
+          rm -rf "$HOME/opencv-sdk/OpenCV-android-sdk/samples" "$RUNNER_TEMP/opencv.zip"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace -POpenCV_DIR="$GITHUB_WORKSPACE/opencv-sdk/OpenCV-android-sdk/sdk/native/jni"
+        run: gradle :app:assembleDebug --stacktrace -POpenCV_DIR="$HOME/opencv-sdk/OpenCV-android-sdk/sdk/native/jni"
 
       - uses: actions/upload-artifact@v4
         with:
