@@ -31,6 +31,12 @@ Run `scripts/setup_opencv.sh`, put the printed `OpenCV_DIR=...` line in `gradle.
 2. OpenCV Android SDK; pass `-POpenCV_DIR=/path/to/OpenCV-android-sdk/sdk/native/jni`.
 3. Build `app` (ABI: arm64-v8a).
 
+## Action on arrival
+The ⚡ button of the floating panel opens a small menu: *Solo visual*, *Aviso (vibración + sonido)*, *Registrar evento en archivo* (`events.log` in the app's external files dir) and a reserved, disabled slot *Acción personalizada*. The action fires once per confirmed arrival (ARRIVED), then the engine re-arms when the star leaves the destination. Hook: `ArrivalActions.onState(...)`.
+
+## Validation on real gameplay (Recording_20261124_003036.mp4, 640x1440 @ 57 fps)
+Python/OpenCV mirror of the detector+tracker: silver star measured in 667/667 frames (NCC ~0.97-0.98, 0.82 minimum during the barrel slide), arrival at slot 2 confirmed at 9.31 s. Lantern: green and orange-red phases both detected (the "red" lamp is orange-red, H up to ~18).
+
 ## Use
 - **Floating panel over the game**: tap *Iniciar análisis visual*, grant overlay + capture, open the game and press ▶ on the draggable panel (🎯 calibrate by touching the game, ◎± radius, ■ stop, ✕ close). Capture starts paused; nothing is processed until ▶.
 - **Full-screen reference test**: *Test a pantalla completa* shows the reference screenshot full screen with the same panel on top; ⇆ scrolls the barrel block so the star moves through the destination.
